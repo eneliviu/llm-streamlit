@@ -43,8 +43,8 @@ def chunk_data(data,
 
 
 def create_embeddings_chroma(chunks,
-                           model_name='text-embedding-3-large',
-                           persist_dir='./chroma_db'):
+                             model_name='text-embedding-3-large',
+                             persist_dir='./chroma_db'):
     '''
     Make embeddings and use Chromadb as vector store
     '''
@@ -52,7 +52,7 @@ def create_embeddings_chroma(chunks,
     import os
     from langchain_community.vectorstores import Chroma
     from langchain_openai import OpenAIEmbeddings
- 
+
     embedding_function = OpenAIEmbeddings(model=model_name)
     vector_store = Chroma.from_documents(chunks,
                                          embedding_function,
@@ -61,7 +61,10 @@ def create_embeddings_chroma(chunks,
     return vector_store
 
 
-def ask_and_get_answer(vector_store, model_name, q, k_nn):
+def ask_and_get_answer(vector_store,
+                       model_name,
+                       q,
+                       k_nn):
     '''
     Asking and getting questions
     '''
@@ -95,7 +98,7 @@ def ask_and_get_answer(vector_store, model_name, q, k_nn):
                                    question_answer_chain)
     answer = chain.invoke({"input": q})
 
-    return answer
+    return answer['answer']
 
 
 def calculate_embedding_cost(texts, model_name):
@@ -109,15 +112,21 @@ def calculate_embedding_cost(texts, model_name):
     return (total_tokens, 0.0004 * total_tokens / 1000)
 
 
+def clear_history():
+    '''
+    Clear history callback
+    '''
+    if 'history' in st.session_state:
+        del st.session_state['history']
+
+
 if __name__ == '__main__':
     import os
     from dotenv import load_dotenv, find_dotenv
     load_dotenv(find_dotenv(), override=True)
 
-    LLM = 'gpt-4o-2024-08-06'  # "gpt-3.5-turbo" #
+    LLM = "gpt-3.5-turbo" #'gpt-4o-2024-08-06'  # 
     EMBEDDING_MODEL = 'text-embedding-3-large'
-    #CHUNK_SIZE = 1000
-    CHUNK_OVERLAP = 500
     CHROMA_PATH = './chroma_db'
 
     # st.image('img.png')
@@ -133,17 +142,21 @@ if __name__ == '__main__':
         chunk_size = st.number_input('Chunk size: ',
                                      min_value=100,
                                      max_value=2048,
-                                     value=512)
+                                     value=512,
+                                     on_change=clear_history)
         chunk_overlap = st.number_input('Chunk_overlap: ',
                                      min_value=0,
                                      max_value=500,
-                                     value=250)
+                                     value=250,
+                                     on_change=clear_history)
 
         k_nn = st.number_input('k',
                                min_value=1,
                                max_value=5,
-                               value=3)
-        add_data = st.button('Add data')
+                               value=3,
+                               on_change=clear_history)
+        add_data = st.button('Add data',
+                             on_click=clear_history)
 
         if uploaded_file and add_data:
             with st.spinner('Reading, splitting and embedding file ...'):
@@ -163,11 +176,34 @@ if __name__ == '__main__':
 
                 st.write(f'Chunk size: {chunk_size}, Chunks: {len(chunks)}')
 
-                tokens, embedding_cost = calculate_embedding_cost(chunks)
+                tokens, embedding_cost = calculate_embedding_cost(chunks,
+                                                                  model_name=EMBEDDING_MODEL)
                 st.write(f'Embedding_cost: {embedding_cost:4f}')
 
                 vector_store = create_embeddings_chroma(chunks,
-                                                        model_name='text-embedding-3-large',
-                                                        persist_dir='./chroma_db')
-                st.sessio_state.vs = vector_store
+                                                        model_name=EMBEDDING_MODEL,
+                                                        persist_dir=CHROMA_PATH)
+                st.session_state.vs = vector_store
                 st.success('File uploaded, chunked and embedded successfully!')
+
+    q = st.text_input('Ask a question about the file content')
+    if q:
+        if 'vs' in st.session_state:
+            vector_store = st.session_state.vs
+            answer = ask_and_get_answer(vector_store=vector_store,
+                                        model_name=LLM,
+                                        q=q,
+                                        k_nn=k_nn)
+            st.text_area('LLM answer: ',
+                         value=answer)
+
+    st.divider()
+    if 'history' not in st.session_state:
+        st.session_state.history = ''
+    value = f'Q: {q} n\A: {answer}'
+    st.session_state.history = f'{value} \n {"-" * 100} \n {st.session_state.history}'
+    h = st.session_state.history
+    st.text_area(label='Chat History',
+                 value=h,
+                 key='history',
+                 height=400)
