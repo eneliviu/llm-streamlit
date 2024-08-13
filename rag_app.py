@@ -187,6 +187,7 @@ if __name__ == '__main__':
                 st.success('File uploaded, chunked and embedded successfully!')
 
     q = st.text_input('Ask a question about the file content')
+    answer = ''
     if q:
         if 'vs' in st.session_state:
             vector_store = st.session_state.vs
@@ -196,7 +197,6 @@ if __name__ == '__main__':
                                         k_nn=k_nn)
             st.text_area('LLM answer: ',
                          value=answer)
-
     st.divider()
     if 'history' not in st.session_state:
         st.session_state.history = ''
